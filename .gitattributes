@@ -1,0 +1,6 @@
+*           text=auto
+*.bat       text eol=crlf
+*.gradle    text eol=lf
+*.mk        text eol=lf
+*.sh        text eol=lf
+app/src/main/cpp/bootstrap-aarch64.zip filter=lfs diff=lfs merge=lfs -text
