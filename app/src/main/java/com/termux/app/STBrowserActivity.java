@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.content.ClipData;
 import android.content.Intent;
+import android.content.MutableContextWrapper;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -11,6 +12,7 @@ import android.os.Bundle;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.view.View;
+import android.view.ViewParent;
 import android.view.ViewGroup;
 import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebResourceError;
@@ -23,6 +25,7 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.view.MotionEvent;
 
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -35,6 +38,12 @@ public class STBrowserActivity extends AppCompatActivity {
     private static final int FILE_CHOOSER_REQUEST = 7101;
 
     private static WebView retainedWebView;
+    /**
+     * A retained WebView must use a context that can be switched back to the
+     * current Activity. Application context breaks WebView-owned popups such as
+     * HTML select menus because it has no window token.
+     */
+    private static MutableContextWrapper retainedWebViewContext;
     private static String retainedUrl;
     private static boolean retainedTriedLocalhostFallback;
     private static boolean retainedPageLoaded;
@@ -96,7 +105,9 @@ public class STBrowserActivity extends AppCompatActivity {
     @SuppressLint("SetJavaScriptEnabled")
     private void attachOrCreateWebView() {
         if (retainedWebView != null) {
+            if (retainedWebViewContext != null) retainedWebViewContext.setBaseContext(this);
             webView = retainedWebView;
+            prepareWebViewForTouch();
             ViewGroup parent = (ViewGroup) webView.getParent();
             if (parent != null) parent.removeView(webView);
             webContainer.addView(webView, 0, new FrameLayout.LayoutParams(
@@ -117,8 +128,10 @@ public class STBrowserActivity extends AppCompatActivity {
             return;
         }
 
-        webView = new WebView(getApplicationContext());
+        retainedWebViewContext = new MutableContextWrapper(this);
+        webView = new WebView(retainedWebViewContext);
         retainedWebView = webView;
+        prepareWebViewForTouch();
         applyRenderingMode();
         webView.setBackgroundColor(Color.rgb(18, 18, 18));
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
@@ -146,6 +159,31 @@ public class STBrowserActivity extends AppCompatActivity {
         configureWebChromeClient();
         installWebViewLayoutListener();
         loadWhenServerReady(0);
+    }
+
+    /**
+     * Keep the WebView as the touch target even when it is hosted in the
+     * activity's toolbar/content hierarchy. Returning false from the listener
+     * deliberately leaves the event to WebView's own dispatcher.
+     */
+    private void prepareWebViewForTouch() {
+        if (webView == null) return;
+        webView.setFocusable(true);
+        webView.setFocusableInTouchMode(true);
+        webView.setClickable(true);
+        webView.setLongClickable(true);
+        webView.setOnTouchListener((view, event) -> {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) {
+                view.requestFocus(View.FOCUS_DOWN);
+                ViewParent parent = view.getParent();
+                if (parent != null) parent.requestDisallowInterceptTouchEvent(true);
+            } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                ViewParent parent = view.getParent();
+                if (parent != null) parent.requestDisallowInterceptTouchEvent(false);
+            }
+            return false;
+        });
     }
 
     private void createLoadingPanel() {
@@ -517,6 +555,9 @@ public class STBrowserActivity extends AppCompatActivity {
         // finished Activity. Replace them before detaching to avoid Activity leaks.
         webView.setWebViewClient(new WebViewClient());
         webView.setWebChromeClient(new WebChromeClient());
+        if (retainedWebViewContext != null) {
+            retainedWebViewContext.setBaseContext(getApplicationContext());
+        }
         ViewGroup parent = (ViewGroup) webView.getParent();
         if (parent != null) parent.removeView(webView);
         webView = null;
@@ -530,6 +571,7 @@ public class STBrowserActivity extends AppCompatActivity {
         webView.destroy();
         if (clearRetained) {
             retainedWebView = null;
+            retainedWebViewContext = null;
             retainedUrl = null;
             retainedTriedLocalhostFallback = false;
             retainedPageLoaded = false;
