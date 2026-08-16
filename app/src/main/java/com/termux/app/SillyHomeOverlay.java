@@ -134,7 +134,7 @@ public class SillyHomeOverlay {
         LinearLayout tabBar = new LinearLayout(activity);
         tabBar.setOrientation(LinearLayout.HORIZONTAL);
         tabBar.setPadding(0, 0, 0, dp(8));
-        String[] tabLabels = new String[]{"\u4e3b\u9875", "\u914d\u7f6e", "\u7ec8\u7aef", "\u65e5\u5fd7", "\u89d2\u8272\u5361"};
+        String[] tabLabels = new String[]{"\u4e3b\u9875", "\u914d\u7f6e", "\u7ec8\u7aef", "\u65e5\u5fd7", "\u753b\u5eca"};
         mainTabButtons = new Button[tabLabels.length];
         for (int i = 0; i < tabLabels.length; i++) {
             final int tab = i;
