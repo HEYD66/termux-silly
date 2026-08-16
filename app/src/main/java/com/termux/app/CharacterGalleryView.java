@@ -354,11 +354,11 @@ public final class CharacterGalleryView {
             if (statusMatch && categoryMatch) visible.add(card);
         }
         GridLayout shelf = new GridLayout(activity);
-        shelf.setColumnCount(4);
+        shelf.setColumnCount(3);
         int index = 0;
         for (CardEntry card : visible) {
             GridLayout.LayoutParams params = new GridLayout.LayoutParams(
-                GridLayout.spec(index / 4, 1, 1f), GridLayout.spec(index % 4, 1, 1f));
+                GridLayout.spec(index / 3, 1, 1f), GridLayout.spec(index % 3, 1, 1f));
             params.width = 0;
             params.setMargins(dp(4), dp(4), dp(4), dp(4));
             shelf.addView(buildShelfCard(card), params);
