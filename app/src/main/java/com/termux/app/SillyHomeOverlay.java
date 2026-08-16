@@ -68,6 +68,7 @@ public class SillyHomeOverlay {
     private LinearLayout logPage;
     private ScrollView logTextScroll;
     private TextView logView;
+    private CharacterGalleryView characterGallery;
     private Button[] mainTabButtons;
     private Button[] logTabButtons;
     private int selectedLog;
@@ -133,7 +134,7 @@ public class SillyHomeOverlay {
         LinearLayout tabBar = new LinearLayout(activity);
         tabBar.setOrientation(LinearLayout.HORIZONTAL);
         tabBar.setPadding(0, 0, 0, dp(8));
-        String[] tabLabels = new String[]{"\u4e3b\u9875", "\u914d\u7f6e", "\u7ec8\u7aef", "\u65e5\u5fd7"};
+        String[] tabLabels = new String[]{"\u4e3b\u9875", "\u914d\u7f6e", "\u7ec8\u7aef", "\u65e5\u5fd7", "\u89d2\u8272\u5361"};
         mainTabButtons = new Button[tabLabels.length];
         for (int i = 0; i < tabLabels.length; i++) {
             final int tab = i;
@@ -188,6 +189,10 @@ public class SillyHomeOverlay {
         logScroll.addView(logPage, new ScrollView.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         pageHost.addView(logScroll, new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        characterGallery = new CharacterGalleryView(activity);
+        pageHost.addView(characterGallery.build(), new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         LinearLayout header = new LinearLayout(activity);
@@ -723,7 +728,7 @@ public class SillyHomeOverlay {
     }
 
     private void selectMainTab(int tab) {
-        selectedTab = Math.max(0, Math.min(3, tab));
+        selectedTab = Math.max(0, Math.min(4, tab));
         if (mainTabButtons != null) updateMainTabStyles();
         if (overlayRoot != null) overlayRoot.setVisibility(View.VISIBLE);
         if (selectedTab == 1) refreshConfigAvailability();
@@ -740,9 +745,15 @@ public class SillyHomeOverlay {
             pageHost.getChildAt(0).setVisibility(selectedTab == 0 ? View.VISIBLE : View.GONE);
             pageHost.getChildAt(1).setVisibility(selectedTab == 1 ? View.VISIBLE : View.GONE);
             pageHost.getChildAt(2).setVisibility(selectedTab == 3 ? View.VISIBLE : View.GONE);
+            pageHost.getChildAt(3).setVisibility(selectedTab == 4 ? View.VISIBLE : View.GONE);
         }
         setTerminalToolbarVisible(false);
         if (selectedTab == 3) refreshInlineLog();
+        if (selectedTab == 4 && characterGallery != null) characterGallery.refresh();
+    }
+
+    public boolean onActivityResult(int requestCode, int resultCode, Intent data) {
+        return characterGallery != null && characterGallery.onActivityResult(requestCode, resultCode, data);
     }
 
     private void updateMainTabStyles() {
