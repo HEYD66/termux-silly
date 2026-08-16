@@ -43,6 +43,7 @@ public class STMainActivity extends AppCompatActivity {
     static final String SILLY_LOG_FILE_NAME = "silly.log";
     static final String STATUS_FILE_NAME = "status.txt";
     static final String DEPS_STATUS_FILE_NAME = "deps.status";
+    static final String CONFIG_STATUS_FILE_NAME = "config.status";
 
     private static final String PREFS_NAME = "sillytavern_launcher";
     private static final String KEY_BRANCH = "branch";
@@ -54,14 +55,21 @@ public class STMainActivity extends AppCompatActivity {
     private static final String GITEE_SOURCE = "https://gitee.com/HEYD66/SillyTavern.git";
     private static final String OFFICIAL_SOURCE = "https://github.com/SillyTavern/SillyTavern";
     private static final String AUTO_SOURCE = GITEE_SOURCE + " " + OFFICIAL_SOURCE;
-    private static final String DEFAULT_CONFIG_ASSET_NAME = "default-config.yaml";
-    private static final String DEFAULT_CONFIG_FILE_NAME = "default-config.yaml";
+    static final String DEFAULT_CONFIG_ASSET_NAME = "default-config.yaml";
+    static final String DEFAULT_CONFIG_FILE_NAME = "default-config.yaml";
 
     private EditText branchInput;
     private EditText portInput;
     private Spinner sourceSpinner;
     private EditText customSourceInput;
     private CheckBox openBrowserAfterStart;
+    private CheckBox userAccountsEnabled;
+    private CheckBox discreetLoginEnabled;
+    private CheckBox whitelistModeEnabled;
+    private CheckBox listenEnabled;
+    private CheckBox basicAuthEnabled;
+    private CheckBox perUserBasicAuthEnabled;
+    private EditText whitelistInput;
     private TextView statusView;
     private LinearLayout dependencyList;
     private Button installButton;
@@ -71,6 +79,9 @@ public class STMainActivity extends AppCompatActivity {
     private Button browserButton;
     private Button terminalButton;
     private Button logButton;
+    private Button applyConfigButton;
+    private boolean configDirty;
+    private String pendingConfigCommandArgs;
 
     private SharedPreferences preferences;
     private final Handler handler = new Handler();
@@ -198,6 +209,53 @@ public class STMainActivity extends AppCompatActivity {
         openBrowserAfterStart.setText("启动后打开浏览器");
         root.addView(openBrowserAfterStart);
 
+        TextView securityTitle = new TextView(this);
+        securityTitle.setText("SillyTavern 服务设置");
+        securityTitle.setTextSize(18);
+        securityTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        securityTitle.setPadding(0, dp(16), 0, dp(4));
+        root.addView(securityTitle);
+
+        TextView securityHint = new TextView(this);
+        securityHint.setText("修改 config.yaml；保存后请停止并重新启动服务。");
+        securityHint.setTextSize(13);
+        root.addView(securityHint);
+
+        userAccountsEnabled = new CheckBox(this);
+        userAccountsEnabled.setText("多用户模式 (enableUserAccounts)");
+        root.addView(userAccountsEnabled);
+        discreetLoginEnabled = new CheckBox(this);
+        discreetLoginEnabled.setText("隐藏登录用户列表 (enableDiscreetLogin)");
+        root.addView(discreetLoginEnabled);
+        whitelistModeEnabled = new CheckBox(this);
+        whitelistModeEnabled.setText("IP 白名单模式 (whitelistMode)");
+        root.addView(whitelistModeEnabled);
+        listenEnabled = new CheckBox(this);
+        listenEnabled.setText("允许局域网访问 (listen)");
+        root.addView(listenEnabled);
+        basicAuthEnabled = new CheckBox(this);
+        basicAuthEnabled.setText("启用基础认证 (basicAuthMode)");
+        root.addView(basicAuthEnabled);
+        perUserBasicAuthEnabled = new CheckBox(this);
+        perUserBasicAuthEnabled.setText("按用户使用基础认证 (perUserBasicAuth)");
+        root.addView(perUserBasicAuthEnabled);
+        View.OnClickListener configDirtyListener = v -> configDirty = true;
+        userAccountsEnabled.setOnClickListener(configDirtyListener);
+        discreetLoginEnabled.setOnClickListener(configDirtyListener);
+        whitelistModeEnabled.setOnClickListener(configDirtyListener);
+        listenEnabled.setOnClickListener(configDirtyListener);
+        basicAuthEnabled.setOnClickListener(configDirtyListener);
+        perUserBasicAuthEnabled.setOnClickListener(configDirtyListener);
+
+        whitelistInput = new EditText(this);
+        whitelistInput.setHint("白名单 IP，用逗号分隔，例如 127.0.0.1,192.168.1.0/24");
+        whitelistInput.setSingleLine(false);
+        whitelistInput.setMinLines(2);
+        whitelistInput.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) configDirty = true;
+        });
+        root.addView(whitelistInput);
+
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.VERTICAL);
         root.addView(actions);
@@ -209,6 +267,8 @@ public class STMainActivity extends AppCompatActivity {
         browserButton = addButton(actions, "打开内置浏览器", v -> openBrowser());
         terminalButton = addButton(actions, "打开 Termux 终端", v -> startActivity(new Intent(this, TermuxActivity.class)));
         logButton = addButton(actions, "查看日志", v -> startActivity(new Intent(this, STLogActivity.class)));
+        applyConfigButton = addButton(actions, "保存 SillyTavern 服务设置", v -> applyServerConfig());
+        addButton(actions, "编辑完整 config.yaml（全部字段）", v -> startActivity(new Intent(this, STConfigActivity.class)));
         addButton(actions, "刷新状态", v -> refreshStatus());
 
         setContentView(scrollView);
@@ -226,12 +286,21 @@ public class STMainActivity extends AppCompatActivity {
 
     private void loadSettings() {
         branchInput.setText(preferences.getString(KEY_BRANCH, "release"));
-        portInput.setText(preferences.getString(KEY_PORT, "8000"));
+        portInput.setText(preferences.getString(KEY_PORT, "8001"));
         int defaultSourceMode = 0;
         int sourceMode = preferences.getInt(KEY_SOURCE_MODE, defaultSourceMode);
         sourceSpinner.setSelection(sourceMode >= 0 && sourceMode <= 1 ? sourceMode : defaultSourceMode);
         customSourceInput.setText(preferences.getString(KEY_CUSTOM_SOURCE, AUTO_SOURCE));
         openBrowserAfterStart.setChecked(preferences.getBoolean(KEY_OPEN_BROWSER, true));
+        userAccountsEnabled.setChecked(false);
+        discreetLoginEnabled.setChecked(false);
+        whitelistModeEnabled.setChecked(true);
+        listenEnabled.setChecked(false);
+        basicAuthEnabled.setChecked(false);
+        perUserBasicAuthEnabled.setChecked(false);
+        whitelistInput.setText("::1,127.0.0.1");
+        configDirty = false;
+        applyConfigStatus(readTextFile(new File(scriptsDir(), CONFIG_STATUS_FILE_NAME)));
     }
 
     private void saveSettings() {
@@ -239,7 +308,7 @@ public class STMainActivity extends AppCompatActivity {
         String port = portInput.getText().toString().trim();
         String customSource = customSourceInput.getText().toString().trim();
         if (branch.isEmpty()) branch = "release";
-        if (port.isEmpty()) port = "8000";
+        if (port.isEmpty()) port = "8001";
         if (customSource.isEmpty()) customSource = AUTO_SOURCE;
         preferences.edit()
             .putString(KEY_BRANCH, branch)
@@ -267,6 +336,7 @@ public class STMainActivity extends AppCompatActivity {
         refreshStatusFromFileOnly();
         refreshDependencyStatusFromFileOnly();
         dispatchStatusCheckTask();
+        dispatchConfigStatusTask();
     }
 
     private void refreshStatusFromFileOnly() {
@@ -293,6 +363,19 @@ public class STMainActivity extends AppCompatActivity {
         }, 1200);
     }
 
+    private void dispatchConfigStatusTask() {
+        if (termuxService == null) return;
+        String command = quote(scriptsDir().getAbsolutePath() + "/sillyctl.sh") + " config-status " +
+            quote(getBranch()) + " " + quote(getSourceSpec()) + " " + quote(getPort());
+        termuxService.createTermuxTask(
+            TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + "/bash",
+            new String[]{"-lc", command},
+            null,
+            TermuxConstants.TERMUX_HOME_DIR_PATH);
+        handler.postDelayed(() -> applyConfigStatus(
+            readTextFile(new File(scriptsDir(), CONFIG_STATUS_FILE_NAME))), 1200);
+    }
+
     private void openBrowser() {
         saveSettings();
         Intent intent = new Intent(this, STBrowserActivity.class);
@@ -307,7 +390,7 @@ public class STMainActivity extends AppCompatActivity {
 
     private String getPort() {
         String port = portInput.getText().toString().trim();
-        return port.isEmpty() ? "8000" : port;
+        return port.isEmpty() ? "8001" : port;
     }
 
     private String getSourceSpec() {
@@ -320,6 +403,71 @@ public class STMainActivity extends AppCompatActivity {
         return AUTO_SOURCE;
     }
 
+    private void applyServerConfig() {
+        saveSettings();
+        String whitelist = whitelistInput.getText().toString().trim();
+        if (whitelist.isEmpty()) whitelist = "127.0.0.1";
+        final String requestedWhitelist = whitelist;
+        pendingConfigCommandArgs = configCommandArgs(requestedWhitelist);
+        configDirty = false;
+        ensureScripts();
+        TermuxInstaller.setupBootstrapIfNeeded(this, () -> {
+            copyDefaultConfigIfNeeded();
+            dispatchConfigCommand(requestedWhitelist);
+        });
+    }
+
+    private void dispatchConfigCommand(String whitelist) {
+        if (termuxService == null) {
+            toast("Termux service is not ready");
+            startAndBindTermuxService();
+            return;
+        }
+        String requestedArgs = pendingConfigCommandArgs != null ? pendingConfigCommandArgs : configCommandArgs(whitelist);
+        String command = quote(scriptsDir().getAbsolutePath() + "/sillyctl.sh") + " config " +
+            quote(getBranch()) + " " + quote(getSourceSpec()) + " " + quote(getPort()) + " " +
+            requestedArgs;
+        pendingConfigCommandArgs = null;
+        setButtonsEnabled(false);
+        termuxService.createTermuxTask(
+            TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + "/bash",
+            new String[]{"-lc", command},
+            null,
+            TermuxConstants.TERMUX_HOME_DIR_PATH);
+        statusView.setText("正在保存 SillyTavern 服务设置…");
+        handler.postDelayed(() -> {
+            setButtonsEnabled(true);
+            applyConfigStatus(readTextFile(new File(scriptsDir(), CONFIG_STATUS_FILE_NAME)));
+            refreshStatusFromFileOnly();
+        }, 1800);
+    }
+
+    private void applyConfigStatus(String rawStatus) {
+        if (configDirty) return;
+        if (rawStatus == null || rawStatus.trim().isEmpty()) return;
+        Map<String, String> values = new HashMap<>();
+        for (String line : rawStatus.split("\\r?\\n")) {
+            int index = line.indexOf('=');
+            if (index > 0) values.put(line.substring(0, index).trim(), line.substring(index + 1).trim());
+        }
+        if (values.containsKey("enableUserAccounts")) userAccountsEnabled.setChecked("1".equals(values.get("enableUserAccounts")));
+        if (values.containsKey("enableDiscreetLogin")) discreetLoginEnabled.setChecked("1".equals(values.get("enableDiscreetLogin")));
+        if (values.containsKey("whitelistMode")) whitelistModeEnabled.setChecked("1".equals(values.get("whitelistMode")));
+        if (values.containsKey("listen")) listenEnabled.setChecked("1".equals(values.get("listen")));
+        if (values.containsKey("basicAuthMode")) basicAuthEnabled.setChecked("1".equals(values.get("basicAuthMode")));
+        if (values.containsKey("perUserBasicAuth")) perUserBasicAuthEnabled.setChecked("1".equals(values.get("perUserBasicAuth")));
+        if (values.containsKey("whitelist") && !values.get("whitelist").isEmpty()) whitelistInput.setText(values.get("whitelist"));
+    }
+
+    private String configCommandArgs(String whitelist) {
+        return (userAccountsEnabled.isChecked() ? "1" : "0") + " " +
+            (discreetLoginEnabled.isChecked() ? "1" : "0") + " " +
+            (whitelistModeEnabled.isChecked() ? "1" : "0") + " " +
+            (listenEnabled.isChecked() ? "1" : "0") + " " +
+            (basicAuthEnabled.isChecked() ? "1" : "0") + " " +
+            (perUserBasicAuthEnabled.isChecked() ? "1" : "0") + " " + quote(whitelist);
+    }
+
     private void setButtonsEnabled(boolean enabled) {
         installButton.setEnabled(enabled);
         updateButton.setEnabled(enabled);
@@ -328,6 +476,7 @@ public class STMainActivity extends AppCompatActivity {
         browserButton.setEnabled(enabled);
         terminalButton.setEnabled(enabled);
         logButton.setEnabled(enabled);
+        applyConfigButton.setEnabled(enabled);
     }
 
     private void ensureScripts() {
@@ -526,7 +675,7 @@ public class STMainActivity extends AppCompatActivity {
             "ACTION=\"${1:-status}\"\n" +
             "BRANCH=\"${2:-release}\"\n" +
             "SOURCE_URLS=\"${3:-" + AUTO_SOURCE + "}\"\n" +
-            "PORT=\"${4:-8000}\"\n" +
+            "PORT=\"${4:-8001}\"\n" +
             "NPM_REGISTRY=\"https://registry.npmmirror.com\"\n" +
             "export HOME=\"" + TermuxConstants.TERMUX_HOME_DIR_PATH + "\"\n" +
             "export PREFIX=\"" + TermuxConstants.TERMUX_PREFIX_DIR_PATH + "\"\n" +
@@ -540,13 +689,15 @@ public class STMainActivity extends AppCompatActivity {
             "CONTROL_LOG=\"$HOME/.termux-silly/" + CONTROL_LOG_FILE_NAME + "\"\n" +
             "STATUS_FILE=\"$HOME/.termux-silly/" + STATUS_FILE_NAME + "\"\n" +
             "DEPS_FILE=\"$HOME/.termux-silly/" + DEPS_STATUS_FILE_NAME + "\"\n" +
+            "CONFIG_STATUS_FILE=\"$HOME/.termux-silly/" + CONFIG_STATUS_FILE_NAME + "\"\n" +
             "SOURCE_FILE=\"$HOME/.termux-silly/source.url\"\n" +
             "RUNTIME_MARKER=\"$HOME/.termux-silly/runtime-packages-v1\"\n" +
             "DEFAULT_CONFIG_FILE=\"$HOME/.termux-silly/" + DEFAULT_CONFIG_FILE_NAME + "\"\n" +
+            "BASIC_AUTH_FILE=\"$HOME/.termux-silly/basic-auth.credentials\"\n" +
             "mkdir -p \"$HOME/.termux-silly\"\n" +
             "if [ -t 1 ] && [ \"${SILLYCTL_CAPTURED:-0}\" != 1 ] && command -v script >/dev/null 2>&1; then\n" +
             "  export SILLYCTL_CAPTURED=1\n" +
-            "  printf -v replay_command '%q ' \"$0\" \"$ACTION\" \"$BRANCH\" \"$SOURCE_URLS\" \"$PORT\"\n" +
+            "  printf -v replay_command '%q ' \"$0\" \"$@\"\n" +
             "  exec script -q -e -f -a -c \"$replay_command\" \"$CONTROL_LOG\"\n" +
             "fi\n" +
             "[ -t 1 ] || exec >> \"$CONTROL_LOG\" 2>&1\n" +
@@ -568,7 +719,13 @@ public class STMainActivity extends AppCompatActivity {
             "    dep_status data_dir \"[ -d '$APP_DIR/data' ]\"\n" +
             "  } > \"$DEPS_FILE\"\n" +
             "}\n" +
-            "server_pids() { pgrep -f 'node server\\.js' 2>/dev/null || true; }\n" +
+            "server_pids() {\n" +
+            "  for pid in $(pgrep -f 'node server\\.js' 2>/dev/null || true); do\n" +
+            "    cmd=\"$(tr '\\0' ' ' < /proc/$pid/cmdline 2>/dev/null || true)\"\n" +
+            "    cwd=\"$(readlink /proc/$pid/cwd 2>/dev/null || true)\"\n" +
+            "    case \"$cmd $cwd\" in *\"$APP_DIR\"*) echo \"$pid\";; esac\n" +
+            "  done\n" +
+            "}\n" +
             "launcher_pid() { [ -f \"$PID_FILE\" ] && cat \"$PID_FILE\" 2>/dev/null || true; }\n" +
             "launcher_running() { pid=\"$(launcher_pid)\"; [ -n \"$pid\" ] && kill -0 \"$pid\" 2>/dev/null; }\n" +
             "is_running() { [ -n \"$(server_pids)\" ] || launcher_running; }\n" +
@@ -778,16 +935,85 @@ public class STMainActivity extends AppCompatActivity {
             "  if is_running; then\n" +
             "    pid=\"$(launcher_pid)\"\n" +
             "    if [ -n \"$pid\" ]; then kill -TERM -- \"-$pid\" 2>/dev/null || kill -TERM \"$pid\" 2>/dev/null || true; fi\n" +
-            "    pkill -TERM -f 'node server\\.js' 2>/dev/null || true\n" +
+            "    for server_pid in $(server_pids); do kill -TERM \"$server_pid\" 2>/dev/null || true; done\n" +
             "    i=0\n" +
             "    while is_running && [ \"$i\" -lt 10 ]; do sleep 1; i=$((i+1)); done\n" +
-            "    if is_running; then pkill -KILL -f 'node server\\.js' 2>/dev/null || true; sleep 1; fi\n" +
+            "    if is_running; then for server_pid in $(server_pids); do kill -KILL \"$server_pid\" 2>/dev/null || true; done; sleep 1; fi\n" +
             "  fi\n" +
             "  rm -f \"$PID_FILE\"\n" +
             "  check_deps\n" +
             "  if is_running; then echo 'Stop failed.'; write_status 'Stop failed: process still running'; exit 1; fi\n" +
             "  echo 'Stopped.'\n" +
             "  write_status \"Installed / not running / source=$(status_source) / port=$PORT\"\n" +
+            "}\n" +
+            "config_status_app() {\n" +
+            "  [ -f \"$APP_DIR/config.yaml\" ] || { echo 'config.yaml is not available.'; return 1; }\n" +
+            "  node - \"$APP_DIR/config.yaml\" <<'NODE' > \"$CONFIG_STATUS_FILE\"\n" +
+            "const fs = require('fs');\n" +
+            "const path = process.argv[2];\n" +
+            "const text = fs.readFileSync(path, 'utf8');\n" +
+            "const scalar = key => { const m = text.match(new RegExp('^' + key + '\\\\s*:\\\\s*(true|false)', 'm')); return m ? (m[1] === 'true' ? '1' : '0') : ''; };\n" +
+            "const lines = text.replace(/\\r\\n/g, '\\n').split('\\n');\n" +
+            "const start = lines.findIndex(line => /^whitelist:\\s*$/.test(line));\n" +
+            "const entries = [];\n" +
+            "if (start >= 0) for (let i = start + 1; i < lines.length && (/^\\s*-\\s*(.+?)\\s*$/.test(lines[i]) || /^\\s*$/.test(lines[i])); i++) { const m = lines[i].match(/^\\s*-\\s*(.+?)\\s*$/); if (m) entries.push(m[1]); }\n" +
+            "const whitelist = entries.join(',');\n" +
+            "const portMatch = text.match(/^port\\s*:\\s*(\\d+)/m);\n" +
+            "const authSection = text.match(/^basicAuthUser:\\s*\\n((?:^[ \\t]+.*(?:\\n|$))*)/m);\n" +
+            "const authText = authSection ? authSection[1] : '';\n" +
+            "const authUserMatch = authText.match(/^\\s+username:\\s*(.*)$/m);\n" +
+            "const authUser = authUserMatch ? String(authUserMatch[1]).trim().replace(/^[\"']|[\"']$/g, '') : '';\n" +
+            "for (const key of ['enableUserAccounts','enableDiscreetLogin','whitelistMode','listen','basicAuthMode','perUserBasicAuth']) console.log(key + '=' + scalar(key));\n" +
+            "console.log('port=' + (portMatch ? portMatch[1] : ''));\n" +
+            "console.log('basicAuthUsernameB64=' + Buffer.from(authUser, 'utf8').toString('base64'));\n" +
+            "console.log('whitelist=' + whitelist);\n" +
+            "NODE\n" +
+            "  cat \"$CONFIG_STATUS_FILE\"\n" +
+            "}\n" +
+            "config_app() {\n" +
+            "  [ -f \"$APP_DIR/config.yaml\" ] || ensure_config\n" +
+            "  [ -f \"$APP_DIR/config.yaml\" ] || { echo 'config.yaml is not available.'; return 1; }\n" +
+            "  backup=\"$APP_DIR/config.yaml.bak.$(date '+%Y%m%d-%H%M%S')\"\n" +
+            "  cp \"$APP_DIR/config.yaml\" \"$backup\" || return 1\n" +
+            "  node - \"$APP_DIR/config.yaml\" \"$BASIC_AUTH_FILE\" \"${1:-0}\" \"${2:-0}\" \"${3:-1}\" \"${4:-0}\" \"${5:-0}\" \"${6:-0}\" \"${7:-127.0.0.1}\" <<'NODE'\n" +
+            "const fs = require('fs');\n" +
+            "const path = process.argv[2];\n" +
+            "const credentialsPath = process.argv[3];\n" +
+            "const args = process.argv.slice(4);\n" +
+            "let text = fs.readFileSync(path, 'utf8').replace(/\\r\\n/g, '\\n');\n" +
+            "const boolKeys = ['enableUserAccounts','enableDiscreetLogin','whitelistMode','listen','basicAuthMode','perUserBasicAuth'];\n" +
+            "for (let i = 0; i < boolKeys.length; i++) { const key = boolKeys[i]; const value = args[i] === '1' ? 'true' : 'false'; const re = new RegExp('^' + key + '\\\\s*:.*$', 'm'); if (re.test(text)) text = text.replace(re, key + ': ' + value); else text += '\\n' + key + ': ' + value + '\\n'; }\n" +
+            "const entries = String(args[6] || '').split(',').map(value => value.trim()).filter(Boolean);\n" +
+            "const lines = text.split('\\n'); let start = lines.findIndex(line => /^whitelist:\\s*$/.test(line));\n" +
+            "if (start < 0) { lines.push('whitelist:'); start = lines.length - 1; }\n" +
+            "let end = start + 1; while (end < lines.length && !/^\\S/.test(lines[end])) end++;\n" +
+            "const block = ['whitelist:', ...entries.map(value => '  - ' + value)]; lines.splice(start, end - start, ...block);\n" +
+            "let credentials = null;\n" +
+            "if (credentialsPath && fs.existsSync(credentialsPath)) {\n" +
+            "  const raw = fs.readFileSync(credentialsPath, 'utf8').replace(/\\r\\n/g, '\\n').replace(/\\n$/, '');\n" +
+            "  const credentialLines = raw.split('\\n');\n" +
+            "  credentials = { username: String(credentialLines[0] || '').trim(), password: credentialLines.slice(1).join('\\n') };\n" +
+            "}\n" +
+            "const quoteYaml = value => \"'\" + String(value).replace(/'/g, \"''\") + \"'\";\n" +
+            "if (credentials && credentials.username) {\n" +
+            "  let authStart = lines.findIndex(line => /^basicAuthUser:\\s*$/.test(line));\n" +
+            "  if (authStart < 0) {\n" +
+            "    lines.push('', 'basicAuthUser:', '  username: ' + quoteYaml(credentials.username));\n" +
+            "    if (credentials.password) lines.push('  password: ' + quoteYaml(credentials.password));\n" +
+            "  } else {\n" +
+            "    let authEnd = authStart + 1; while (authEnd < lines.length && (lines[authEnd].trim() === '' || /^\\s+/.test(lines[authEnd]))) authEnd++;\n" +
+            "    const authBlock = lines.slice(authStart, authEnd);\n" +
+            "    const replaceAuthField = (name, value, allowEmpty) => { const re = new RegExp('^\\\\s+' + name + '\\\\s*:'); const index = authBlock.findIndex(line => re.test(line)); if (!allowEmpty && !value) return; const line = '  ' + name + ': ' + quoteYaml(value); if (index >= 0) authBlock[index] = line; else authBlock.push(line); };\n" +
+            "    replaceAuthField('username', credentials.username, false);\n" +
+            "    replaceAuthField('password', credentials.password, false);\n" +
+            "    lines.splice(authStart, authEnd - authStart, ...authBlock);\n" +
+            "  }\n" +
+            "}\n" +
+            "fs.writeFileSync(path, lines.join('\\n').replace(/\\n*$/, '\\n'));\n" +
+            "NODE\n" +
+            "  rm -f \"$BASIC_AUTH_FILE\"\n" +
+            "  config_status_app\n" +
+            "  echo \"SillyTavern service settings saved. Restart the server to apply them. Backup: $backup\"\n" +
             "}\n" +
             "status_app() {\n" +
             "  if is_installed; then installed='Installed'; else installed='Not installed'; fi\n" +
@@ -803,6 +1029,9 @@ public class STMainActivity extends AppCompatActivity {
             "  start) start_app ;;\n" +
             "  stop) stop_app ;;\n" +
             "  status) status_app ;;\n" +
+            "  config-status) config_status_app ;;\n" +
+            "  config) config_app \"${5:-0}\" \"${6:-0}\" \"${7:-1}\" \"${8:-0}\" \"${9:-0}\" \"${10:-0}\" \"${11:-127.0.0.1}\" ;;\n" +
+            "  config-restart) config_app \"${5:-0}\" \"${6:-0}\" \"${7:-1}\" \"${8:-0}\" \"${9:-0}\" \"${10:-0}\" \"${11:-127.0.0.1}\" && stop_app && start_app ;;\n" +
             "  *) echo \"Unknown action: $ACTION\"; exit 2 ;;\n" +
             "esac\n";
     }

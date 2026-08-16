@@ -2,15 +2,19 @@ package com.termux.app;
 
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
+import android.app.AlertDialog;
 import android.content.ClipData;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.MutableContextWrapper;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.InputType;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
+import android.webkit.HttpAuthHandler;
 import android.view.View;
 import android.view.ViewParent;
 import android.view.ViewGroup;
@@ -21,6 +25,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -49,6 +54,7 @@ public class STBrowserActivity extends AppCompatActivity {
     private static boolean retainedPageLoaded;
     private static boolean useSoftwareRendering;
 
+    private AlertDialog httpAuthDialog;
     private LinearLayout root;
     private FrameLayout webContainer;
     private LinearLayout loadingPanel;
@@ -97,7 +103,7 @@ public class STBrowserActivity extends AppCompatActivity {
         setContentView(root);
 
         currentUrl = getIntent().getStringExtra(EXTRA_URL);
-        if (currentUrl == null || currentUrl.trim().isEmpty()) currentUrl = "http://localhost:8000";
+        if (currentUrl == null || currentUrl.trim().isEmpty()) currentUrl = "http://localhost:8001";
         currentUrl = preferLocalhost(currentUrl);
         attachOrCreateWebView();
     }
@@ -295,6 +301,12 @@ public class STBrowserActivity extends AppCompatActivity {
             }
 
             @Override
+            public void onReceivedHttpAuthRequest(WebView view, HttpAuthHandler handler,
+                                                  String host, String realm) {
+                showHttpAuthDialog(handler, host, realm);
+            }
+
+            @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 super.onReceivedError(view, request, error);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && request != null
@@ -326,6 +338,79 @@ public class STBrowserActivity extends AppCompatActivity {
                 return true;
             }
         });
+    }
+
+    /**
+     * Android WebView does not display a Basic Auth prompt on its own. Without
+     * handling this callback, SillyTavern's 401 response is rendered as a
+     * permanent "Unauthorized" page. Keep credentials in memory only; WebView
+     * will reuse them for the retained page during this app session.
+     */
+    private void showHttpAuthDialog(HttpAuthHandler handler, String host, String realm) {
+        if (handler == null || isFinishing() || isDestroyed()) {
+            if (handler != null) handler.cancel();
+            return;
+        }
+        if (httpAuthDialog != null && httpAuthDialog.isShowing()) {
+            handler.cancel();
+            return;
+        }
+
+        LinearLayout fields = new LinearLayout(this);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        int horizontalPadding = dp(24);
+        fields.setPadding(horizontalPadding, dp(4), horizontalPadding, 0);
+
+        TextView message = new TextView(this);
+        String target = host == null || host.trim().isEmpty() ? "SillyTavern" : host;
+        String scope = realm == null || realm.trim().isEmpty() ? "HTTP Basic Auth" : realm;
+        message.setText("服务器 " + target + " 要求登录（" + scope + "）");
+        message.setTextColor(Color.WHITE);
+        fields.addView(message, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        EditText username = new EditText(this);
+        username.setSingleLine(true);
+        username.setHint("用户名");
+        username.setText("user");
+        fields.addView(username, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        EditText password = new EditText(this);
+        password.setSingleLine(true);
+        password.setHint("密码");
+        password.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        password.setText("password");
+        fields.addView(password, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle("SillyTavern 登录")
+            .setView(fields)
+            .setNegativeButton("取消", (ignored, which) -> handler.cancel())
+            .setPositiveButton("登录", null)
+            .create();
+        httpAuthDialog = dialog;
+        dialog.setOnCancelListener(ignored -> handler.cancel());
+        dialog.setOnDismissListener(ignored -> {
+            if (httpAuthDialog == dialog) httpAuthDialog = null;
+        });
+        dialog.setOnShowListener(ignored -> {
+            Button loginButton = dialog.getButton(DialogInterface.BUTTON_POSITIVE);
+            loginButton.setOnClickListener(v -> {
+                String user = username.getText().toString().trim();
+                String pass = password.getText().toString();
+                if (user.isEmpty()) {
+                    username.setError("请输入用户名");
+                    username.requestFocus();
+                    return;
+                }
+                handler.proceed(user, pass);
+                dialog.dismiss();
+            });
+            password.requestFocus();
+        });
+        dialog.show();
     }
 
     private void applyMobileLayout(WebView view) {
@@ -449,7 +534,7 @@ public class STBrowserActivity extends AppCompatActivity {
     }
 
     private String preferLocalhost(String url) {
-        if (url == null) return "http://localhost:8000";
+        if (url == null) return "http://localhost:8001";
         return url.replace("http://127.0.0.1:", "http://localhost:");
     }
 
