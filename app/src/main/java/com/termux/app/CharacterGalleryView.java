@@ -354,11 +354,11 @@ public final class CharacterGalleryView {
             if (statusMatch && categoryMatch) visible.add(card);
         }
         GridLayout shelf = new GridLayout(activity);
-        shelf.setColumnCount(2);
+        shelf.setColumnCount(4);
         int index = 0;
         for (CardEntry card : visible) {
             GridLayout.LayoutParams params = new GridLayout.LayoutParams(
-                GridLayout.spec(index / 2, 1, 1f), GridLayout.spec(index % 2, 1, 1f));
+                GridLayout.spec(index / 4, 1, 1f), GridLayout.spec(index % 4, 1, 1f));
             params.width = 0;
             params.setMargins(dp(4), dp(4), dp(4), dp(4));
             shelf.addView(buildShelfCard(card), params);
@@ -385,8 +385,8 @@ public final class CharacterGalleryView {
     private LinearLayout buildShelfCard(CardEntry entry) {
         boolean imported = isImported(entry.file);
         LinearLayout card = SillyUI.card(activity, null);
-        card.setPadding(dp(10), dp(10), dp(10), dp(10));
-        card.setMinimumHeight(dp(214));
+        card.setPadding(dp(6), dp(6), dp(6), dp(6));
+        card.setMinimumHeight(dp(166));
         card.setOnClickListener(v -> showDetails(entry));
 
         CheckBox selector = new CheckBox(activity);
@@ -411,11 +411,11 @@ public final class CharacterGalleryView {
         if (bitmap != null) preview.setImageBitmap(bitmap);
         else preview.setImageResource(R.drawable.silly_mascot_cutout);
         LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(106));
-        imageParams.setMargins(0, dp(2), 0, dp(8));
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(78));
+        imageParams.setMargins(0, dp(2), 0, dp(5));
         card.addView(preview, imageParams);
 
-        TextView title = text(stripExtension(entry.file.getName()), 15, SillyUI.TEXT_PRIMARY);
+        TextView title = text(stripExtension(entry.file.getName()), 12, SillyUI.TEXT_PRIMARY);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setMaxLines(2);
         card.addView(title, wrapParams(0));
