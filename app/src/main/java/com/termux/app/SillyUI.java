@@ -15,6 +15,7 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.Switch;
 import android.widget.TextView;
 
 /**
@@ -152,6 +153,25 @@ public final class SillyUI {
         cb.setPadding(dp(c, 8), 0, 0, 0);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             cb.setButtonTintList(ColorStateList.valueOf(ACCENT_DARK));
+        }
+    }
+
+    public static void styleSwitch(Context c, Switch sw) {
+        sw.setTextColor(TEXT_PRIMARY);
+        sw.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        sw.setShowText(false);
+        sw.setMinHeight(dp(c, 48));
+        sw.setPadding(dp(c, 8), dp(c, 2), dp(c, 4), dp(c, 2));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            int[][] states = new int[][]{
+                new int[]{android.R.attr.state_checked},
+                new int[]{}
+            };
+            sw.setThumbTintList(new ColorStateList(states, new int[]{ACCENT_DARK, 0xFFE5EAF2}));
+            // An enabled option must read as active at a glance: use the same
+            // solid blue accent as the primary controls instead of a faint
+            // translucent tint.
+            sw.setTrackTintList(new ColorStateList(states, new int[]{ACCENT_DARK, 0xFFD5DCE8}));
         }
     }
 

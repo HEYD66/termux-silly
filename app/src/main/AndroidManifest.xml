@@ -67,6 +67,11 @@
             android:name=".app.STMainActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".app.STConfigActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- TermuxActivity：保留但非启动页，显式设置exported -->
         <activity
             android:name=".app.TermuxActivity"
