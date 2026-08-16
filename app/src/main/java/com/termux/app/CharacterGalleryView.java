@@ -541,7 +541,7 @@ public final class CharacterGalleryView {
         }
         int conflicts = 0;
         for (CardEntry card : cards) {
-            if (targetFile(card.file).exists()) conflicts++;
+            if (isImported(card.file)) conflicts++;
         }
         if (conflicts > 0) {
             new AlertDialog.Builder(activity)
@@ -559,7 +559,7 @@ public final class CharacterGalleryView {
         new Thread(() -> {
             int imported = 0;
             for (CardEntry card : cards) {
-                if (copyToSillyTavern(card.file, targetFile(card.file))) imported++;
+                if (copyToAllUserDirectories(card.file)) imported++;
             }
             int count = imported;
             activity.runOnUiThread(() -> {
@@ -636,28 +636,54 @@ public final class CharacterGalleryView {
             toast("SillyTavern 尚未安装完成");
             return;
         }
-        File target = targetFile(card);
-        if (target.exists()) {
+        if (isImported(card)) {
             new AlertDialog.Builder(activity)
                 .setTitle("角色卡已存在")
                 .setMessage("是否覆盖 SillyTavern 中的同名角色卡？")
                 .setNegativeButton("取消", null)
                 .setPositiveButton("覆盖", (dialog, which) ->
-                    performSingleImport(card, target))
+                    performSingleImport(card))
                 .show();
         } else {
-            performSingleImport(card, target);
+            performSingleImport(card);
         }
     }
 
-    private void performSingleImport(File card, File target) {
+    private void performSingleImport(File card) {
         new Thread(() -> {
-            boolean ok = copyToSillyTavern(card, target);
+            boolean ok = copyToAllUserDirectories(card);
+            File target = card;
             activity.runOnUiThread(() -> {
                 refresh();
                 toast(ok ? "已导入 SillyTavern: " + target.getName() : "导入 SillyTavern 失败");
             });
         }, "character-gallery-single-import").start();
+    }
+
+    private boolean copyToAllUserDirectories(File source) {
+        boolean copied = false;
+        for (File target : userCharacterTargets(source)) {
+            if (copyToSillyTavern(source, target)) copied = true;
+        }
+        return copied;
+    }
+
+    private List<File> userCharacterTargets(File card) {
+        File appDir = new File(TermuxConstants.TERMUX_HOME_DIR, "SillyTavern");
+        File dataDir = new File(appDir, "data");
+        File[] userDirs = dataDir.listFiles(file -> file.isDirectory()
+            && !file.getName().startsWith("_"));
+        List<File> targets = new ArrayList<>();
+        if (userDirs != null) {
+            for (File userDir : userDirs) {
+                targets.add(new File(new File(userDir, "characters"), card.getName()));
+            }
+        }
+        if (targets.isEmpty()) {
+            targets.add(new File(new File(new File(appDir, "data"), "default-user"),
+                "characters/" + card.getName()));
+        }
+        return targets;
     }
 
     private boolean copyToSillyTavern(File source, File target) {
@@ -729,13 +755,11 @@ public final class CharacterGalleryView {
             "character-gallery");
     }
 
-    private File targetFile(File card) {
-        return new File(new File(new File(TermuxConstants.TERMUX_HOME_DIR, "SillyTavern"),
-            "public/characters"), card.getName());
-    }
-
     private boolean isImported(File card) {
-        return targetFile(card).isFile();
+        for (File target : userCharacterTargets(card)) {
+            if (target.isFile()) return true;
+        }
+        return false;
     }
 
     private void ensureGalleryDir() {
